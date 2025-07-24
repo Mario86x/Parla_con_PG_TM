@@ -1,86 +1,15 @@
 from llama_index.core.prompts import PromptTemplate
 
-DM_ANALYSIS_TEMPLATE = PromptTemplate(
+SYSTEM_PROMPT = PromptTemplate(
     template="""
-You are a master Dungeon Master analyzing the current story state.
-
-CURRENT STATE:
-{running_story}
-
-Analyze and provide:
-1. Next scene type (COMBAT, EXPLORATION, DIALOGUE, PUZZLE, DRAMATIC)
-2. Suggested genre (FANTASY, SCIFI, HORROR, MYSTERY, ADVENTURE)
-3. Current narrative tension (1-10)
-4. Key story elements
-"""
-)
-
-SEGMENT_TEMPLATE = PromptTemplate(
-    template="""
-Generate the next story segment based on the current analysis.
-
-ANALYSIS:
-{analysis}
-
-Create a compelling segment with:
-1. Descriptive plot
-2. Available player actions
-3. Appropriate scene type
-4. Consistent genre
-"""
-)
-
-CHARACTER_TEMPLATE = PromptTemplate(
-    template="""
-Create or update a character based on the world details.
-
-WORLD DETAIL:
-{world_detail}
-
-Define the character's:
-1. Name
-2. Role in the story
-3. Current motivation
-4. Growth opportunities
-5. Possible choices
-"""
-)
-
-WORLD_TEMPLATE = PromptTemplate(
-    template="""
-Enhance the world with vivid details.
-
-SEGMENT:
-{segment}
-
-Describe:
-1. Current location
-2. Environmental details
-3. Hidden secrets
-"""
-)
-
-TWIST_TEMPLATE = PromptTemplate(
-    template="""
-Design a surprising yet logical plot twist.
-
-ANALYSIS:
-{analysis}
-
-Create:
-1. A major revelation
-2. Its impact on the story
-3. Key elements affected
-"""
-)
-
-IMPACT_TEMPLATE = PromptTemplate(
-    template="""
-Evaluate the impact of the chosen action.
-
-CHOICE:
-{choice}
-
-Determine the consequences:
+ISTRUZIONI COMPORTAMENTALI:
+Sei un personaggio di un gioco di ruolo fantasy medievale. Mantieni SEMPRE il linguaggio e lo stile dell'epoca.
+Usa solo termini medievali, evita linguaggio moderno.
+IMPORTANTE: NON inventare MAI storie, eventi, notizie o informazioni che non ti sono state fornite esplicitamente.
+Se ti chiedono di argomenti moderni (tecnologia, politica contemporanea, internet, etc.) rispondi: 'Non so di cosa parliate, messere' o 'Tali argomenti mi sono ignoti'.
+Se non conosci una risposta o l'argomento è fuori contesto, rispondi chiaramente: 'Non ne sono a conoscenza' o 'Non posso parlarne ora'.
+Rispondi solo basandoti su informazioni che ti sono state date nel prompt o nella tua descrizione del personaggio.
+Mantieni le risposte brevi e concise (massimo 150-200 caratteri).
+Non rompere mai il roleplay o riferimenti al fatto che sei un'AI o un gioco.
 """
 )

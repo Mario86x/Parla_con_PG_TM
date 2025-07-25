@@ -4,8 +4,11 @@ from dotenv import load_dotenv
 from rich.console import Console
 from workflow import ChatWorkflow, StartEvent
 
+
 # Initialize Rich console for better output
 console = Console()
+
+
 
 async def main():
     # Load environment variables

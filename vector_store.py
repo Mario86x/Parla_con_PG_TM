@@ -51,13 +51,13 @@ def create_vector_store(docs_path: str = "docs"):
 
         # Insert new documents into the existing index
         logging.info("Inserting new documents into the existing index")
-        for doc in tqdm(documents[:5], desc="Inserting Documents"): 
+        for doc in tqdm(documents, desc="Inserting Documents"): 
             index.insert(doc)
         logging.info("New documents inserted successfully.")
     else:
         # Create the vector store index
         logging.info("Creating new vector store index")
-        index = VectorStoreIndex.from_documents(tqdm(documents[:5], desc="Creating Vector Store")) # documents[1:10]
+        index = VectorStoreIndex.from_documents(tqdm(documents, desc="Creating Vector Store"))
         logging.info("Vector store index created successfully.")
 
     return index

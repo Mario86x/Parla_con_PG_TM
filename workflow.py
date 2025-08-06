@@ -1,7 +1,6 @@
 from llama_index.core.workflow import Workflow, step, Context, Event, StartEvent, StopEvent
 from llm import init_llm
 from templates import SYSTEM_PROMPT
-from vector_store import create_vector_store  # Import the vector store creation function
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext, load_index_from_storage
 from llama_index.embeddings.ollama import OllamaEmbedding
 import os
@@ -18,26 +17,22 @@ class ChatWorkflow(Workflow):
     def __init__(self, api_key: str):
         super().__init__()
         self.llm = init_llm(api_key)
-        self.vector_store_index = self._load_vector_store()  # Load the vector store during initialization
         self.embed_model = OllamaEmbedding(model_name="nomic-embed-text:v1.5")
+        Settings.embed_model = self.embed_model
+        Settings.llm = self.llm
+        print("Using Ollama embedding model for vector store.")
+        self.vector_store_index = self._load_vector_store()  # Load the vector store during initialization
+
         print("Chat workflow initialized with LLM and vector store.")
 
     def _load_vector_store(self) -> VectorStoreIndex:
         """Loads the vector store from disk or creates it if it doesn't exist."""
-        if os.path.exists(PERSIST_DIR):
-            # Load the existing index from disk
-            print("Loading existing vector store index from disk")
-            storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
-            index = load_index_from_storage(storage_context)
-            print("Existing vector store index loaded successfully.")
-            return index
-        else:
-            # Create the vector store index
-            print("Creating new vector store index")
-            index = create_vector_store()
-            index.storage_context.persist(persist_dir=PERSIST_DIR)
-            print("Vector store index created successfully.")
-            return index
+        # Load the existing index from disk
+        print("Loading existing vector store index from disk")
+        storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
+        index = load_index_from_storage(storage_context)
+        print("Existing vector store index loaded successfully.")
+        return index
 
     async def _update_running_story(self, ctx: Context, new_content: str):
         running_story = await ctx.get("running_story", "")
@@ -48,8 +43,6 @@ class ChatWorkflow(Workflow):
     async def start_chat(self, ctx: Context, ev: StartEvent) -> UserMessageEvent:
         print("Welcome to the chat! Let's create a story together.")
         await self._update_running_story(ctx, "Story started.")
-        Settings.embed_model = self.embed_model
-        Settings.llm = self.llm
         print("Using Ollama embedding model for vector store.")
         return UserMessageEvent(message="Start chat")
 

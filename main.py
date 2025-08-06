@@ -2,7 +2,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from rich.console import Console
-from workflow import ChatWorkflow, StartEvent
+from workflow import ChatWorkflow
 
 
 # Initialize Rich console for better output

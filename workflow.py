@@ -1,6 +1,6 @@
 from llama_index.core.workflow import Workflow, step, Context, Event, StartEvent, StopEvent
 from llm import init_llm
-from templates import SYSTEM_PROMPT
+from templates import SYSTEM_PROMPT, CHARACTER_PROMPT
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext, load_index_from_storage
 from llama_index.embeddings.ollama import OllamaEmbedding
 import os
@@ -60,18 +60,27 @@ class ChatWorkflow(Workflow):
         running_story = await ctx.get("running_story", "")
 
         # Query the vector store for relevant information
-        query_engine = self.vector_store_index.as_query_engine()
-        context = query_engine.query(ev.message)
+        retriever = self.vector_store_index.as_retriever(similarity_top_k=3) # top k da scegliere in futuro
+        nodes = retriever.retrieve(ev.message)
+        context = "\n".join([node.text for node in nodes])
 
-        prompt = f"{SYSTEM_PROMPT.template}\n\nMessages history: {running_story}\n\nContext: {context}\n\nYou: {ev.message}\nAssistant:"
+        prompt = f"""{SYSTEM_PROMPT.template}\n\n
+                    {CHARACTER_PROMPT.template}\n\n
+                    Conversazioni precedenti: {running_story}\n\n
+                    Informazioni di Contesto: {context}\n\n
+                    Messaggio del giocatore: {ev.message}\n
+                    Il tuo personaggio:"""
 
-        print(f"\nGenerating response for: {ev.message}\n--------------\n")
-        print(f"the context is: {context}\n--------------\n")
+        print(f"\nGenerating response \n--------------\n")
+
+        # se nel messaggio c'è <debug> allora stampo il prompt
+        if "<debug>" in ev.message:
+            print(f"Prompt for LLM:\n{prompt}\n--------------\n")
 
         try:
             response = self.llm.complete(prompt)
             response_text = response.text.strip()
-            await self._update_running_story(ctx, f"\nAssistant: {response_text}")
+            await self._update_running_story(ctx, f"\nIl tuo personaggio: {response_text}")
             return AssistantResponseEvent(response=response_text)
         except Exception as e:
             print(f"Error generating response: {e}")

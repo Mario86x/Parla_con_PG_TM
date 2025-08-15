@@ -1,7 +1,9 @@
 import os
+from dotenv import load_dotenv
 import logging
 import sys
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext, load_index_from_storage
+from llama_parse import LlamaParse
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
 from tqdm import tqdm  # Import tqdm for progress bar
@@ -10,6 +12,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
 PERSIST_DIR = "storage"  # Define a constant for the persist directory
+load_dotenv()  # Load environment variables from .env file
 
 def create_vector_store(docs_path: str = "docs"):
     """
@@ -29,7 +32,16 @@ def create_vector_store(docs_path: str = "docs"):
 
     # Load the documents from the directory
     logging.info(f"Loading documents from {docs_path}")
-    documents = SimpleDirectoryReader(docs_path).load_data()
+    parser = LlamaParse(
+        api_key=os.getenv("LLAMAPARSE_API_KEY"),
+        result_type="markdown",  # "markdown" and "text" are available
+        verbose=True,
+    )
+    file_extractor = {".pdf": parser}
+    documents = SimpleDirectoryReader(
+        docs_path, file_extractor=file_extractor
+    ).load_data()
+
 
     # Initialize the LLM
     logging.info("Initializing LLM (Ollama)")

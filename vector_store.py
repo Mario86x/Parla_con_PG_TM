@@ -6,6 +6,7 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, 
 from llama_parse import LlamaParse
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.ollama import OllamaEmbedding
+from llm import init_llm, init_embed_model
 from tqdm import tqdm  # Import tqdm for progress bar
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -44,13 +45,18 @@ def create_vector_store(docs_path: str = "docs"):
 
 
     # Initialize the LLM
-    logging.info("Initializing LLM (Ollama)")
-    llm = Ollama(model="deepseek-r1:1.5b")
+    # logging.info("Initializing LLM (Ollama)")
+    # llm = Ollama(model="deepseek-r1:1.5b")
+    logging.info("Initializing LLM (Google GenAI)")
+    api_key = os.getenv("GOOGLE_API_KEY")
+    llm = init_llm(api_key)
     Settings.llm = llm
 
     # Initialize the embeddings model
-    logging.info("Initializing embedding model (Ollama)")
-    embed_model = OllamaEmbedding(model_name="nomic-embed-text:v1.5")
+    # logging.info("Initializing embedding model (Ollama)")
+    # embed_model = OllamaEmbedding(model_name="nomic-embed-text:v1.5")
+    logging.info("Initializing embedding model (Google GenAI)")
+    embed_model = init_embed_model(api_key)  # Using the same LLM for embeddings
     Settings.embed_model = embed_model
 
     # Check if the vector store already exists
@@ -69,7 +75,9 @@ def create_vector_store(docs_path: str = "docs"):
     else:
         # Create the vector store index
         logging.info("Creating new vector store index")
-        index = VectorStoreIndex.from_documents(tqdm(documents, desc="Creating Vector Store"))
+        index = VectorStoreIndex.from_documents(tqdm(documents, desc="Creating Vector Store"),
+                                                show_progress=True,
+                                                insert_batch_size=100)
         logging.info("Vector store index created successfully.")
 
     return index

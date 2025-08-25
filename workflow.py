@@ -1,8 +1,8 @@
 from llama_index.core.workflow import Workflow, step, Context, Event, StartEvent, StopEvent
-from llm import init_llm
+from llm import init_llm, init_embed_model
 from templates import SYSTEM_PROMPT, CHARACTER_PROMPT
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext, load_index_from_storage
-from llama_index.embeddings.ollama import OllamaEmbedding
+# from llama_index.embeddings.ollama import OllamaEmbedding
 import os
 
 PERSIST_DIR = "storage"
@@ -17,10 +17,10 @@ class ChatWorkflow(Workflow):
     def __init__(self, api_key: str):
         super().__init__()
         self.llm = init_llm(api_key)
-        self.embed_model = OllamaEmbedding(model_name="nomic-embed-text:v1.5")
+        # self.embed_model = OllamaEmbedding(model_name="nomic-embed-text:v1.5")
+        self.embed_model = init_embed_model(api_key)
         Settings.embed_model = self.embed_model
         Settings.llm = self.llm
-        print("Using Ollama embedding model for vector store.")
         self.vector_store_index = self._load_vector_store()  # Load the vector store during initialization
 
         print("Chat workflow initialized with LLM and vector store.")

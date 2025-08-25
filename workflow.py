@@ -43,7 +43,6 @@ class ChatWorkflow(Workflow):
     async def start_chat(self, ctx: Context, ev: StartEvent) -> UserMessageEvent:
         print("Welcome to the chat! Let's create a story together.")
         await self._update_running_story(ctx, "Story started.")
-        print("Using Ollama embedding model for vector store.")
         return UserMessageEvent(message="Start chat")
 
     @step
@@ -60,8 +59,11 @@ class ChatWorkflow(Workflow):
         running_story = await ctx.get("running_story", "")
 
         # Query the vector store for relevant information
-        retriever = self.vector_store_index.as_retriever(similarity_top_k=3) # top k da scegliere in futuro
-        nodes = retriever.retrieve(ev.message)
+        retriever = self.vector_store_index.as_retriever(similarity_top_k=10) # top k da scegliere in futuro
+        nodes = retriever.retrieve(f"""{CHARACTER_PROMPT.template}\n\n
+                                    Conversazioni precedenti: {running_story}\n\n
+                                    Messaggio del giocatore: {ev.message}\n
+                                   """)
         context = "\n".join([node.text for node in nodes])
 
         prompt = f"""{SYSTEM_PROMPT.template}\n\n

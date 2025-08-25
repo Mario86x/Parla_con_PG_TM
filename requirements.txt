@@ -1,0 +1,6 @@
+python-telegram-bot==22.3
+python-dotenv==1.1.1
+llama-index-core==0.13.0
+llama-index-llms-google-genai
+llama-index-embeddings-google-genai
+tqdm==4.66.1

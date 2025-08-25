@@ -1,4 +1,3 @@
-storage/*
 docs/*
 .venv/*
 *.env

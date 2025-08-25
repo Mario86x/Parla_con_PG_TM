@@ -112,7 +112,7 @@ async def on_message(message):
         
         try:
             # Query vector store for context
-            retriever = vector_store.as_retriever(similarity_top_k=3)
+            retriever = vector_store.as_retriever(similarity_top_k=10)
             nodes = retriever.retrieve(user_message)
             relevant_context = "\n".join([node.text for node in nodes])
             

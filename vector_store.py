@@ -4,8 +4,8 @@ import logging
 import sys
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext, load_index_from_storage
 from llama_parse import LlamaParse
-from llama_index.llms.ollama import Ollama
-from llama_index.embeddings.ollama import OllamaEmbedding
+# from llama_index.llms.ollama import Ollama
+# from llama_index.embeddings.ollama import OllamaEmbedding
 from llm import init_llm, init_embed_model
 from tqdm import tqdm  # Import tqdm for progress bar
 

@@ -4,6 +4,7 @@ from templates import SYSTEM_PROMPT, CHARACTER_PROMPT
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext, load_index_from_storage
 # from llama_index.embeddings.ollama import OllamaEmbedding
 import os
+import tiktoken
 
 PERSIST_DIR = "storage"
 
@@ -42,7 +43,7 @@ class ChatWorkflow(Workflow):
     @step
     async def start_chat(self, ctx: Context, ev: StartEvent) -> UserMessageEvent:
         print("Welcome to the chat! Let's create a story together.")
-        await self._update_running_story(ctx, "Story started.")
+        await self._update_running_story(ctx, "")
         return UserMessageEvent(message="Start chat")
 
     @step
@@ -59,7 +60,7 @@ class ChatWorkflow(Workflow):
         running_story = await ctx.get("running_story", "")
 
         # Query the vector store for relevant information
-        retriever = self.vector_store_index.as_retriever(similarity_top_k=10) # top k da scegliere in futuro
+        retriever = self.vector_store_index.as_retriever(similarity_top_k=5) # top k da scegliere in futuro
         nodes = retriever.retrieve(f"""{CHARACTER_PROMPT.template}\n\n
                                     Conversazioni precedenti: {running_story}\n\n
                                     Messaggio del giocatore: {ev.message}\n
@@ -68,11 +69,12 @@ class ChatWorkflow(Workflow):
 
         prompt = f"""{SYSTEM_PROMPT.template}\n\n
                     {CHARACTER_PROMPT.template}\n\n
-                    Conversazioni precedenti: {running_story}\n\n
-                    Informazioni di Contesto: {context}\n\n
-                    Messaggio del giocatore: {ev.message}\n
-                    Il tuo personaggio:"""
+                    ##CONVERSAZIONI PRECEDENTI: {running_story}\n\n
+                    ##INFORMAZIONI DI CONTESTO: {context}\n\n
+                    ##MESSAGGIO DEL GIOCATORE: {ev.message}\n
+                    ##IL TUO PERSONAGGIO:"""
 
+        print(f"\nprompt length: {len(tiktoken.encoding_for_model('gpt-4o-mini').encode(prompt))} tokens\n")
         print(f"\nGenerating response \n--------------\n")
 
         # se nel messaggio c'è <debug> allora stampo il prompt

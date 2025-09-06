@@ -7,8 +7,8 @@ import os
 def init_llm(api_key):
     llm = GoogleGenAI(
         # model="models/gemini-1.5-flash",
-        # model = "models/gemma-3-27b-it",
-        model = "models/gemini-2.5-flash",
+        model = "models/gemma-3-27b-it",
+        # model = "models/gemini-2.5-flash",
         api_key=api_key,  # uses GOOGLE_API_KEY env var by default
     )
     print("Using Google Gemini API")

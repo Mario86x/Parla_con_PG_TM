@@ -1,6 +1,7 @@
 from llama_index.llms.google_genai import GoogleGenAI
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
 from llama_index.llms.ollama import Ollama
+from llama_index.embeddings.ollama import OllamaEmbedding
 from dotenv import load_dotenv
 import os
 
@@ -27,6 +28,9 @@ def init_embed_model(api_key):
     print("Using Google Embedding API")
     return embed_model
 
+def init_local_embed_model():
+    embed_model = OllamaEmbedding(model_name="embeddinggemma")
+    return embed_model
 
 if __name__ == "__main__":
     from llama_index.core.bridge.pydantic import BaseModel

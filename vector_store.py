@@ -2,94 +2,142 @@ import os
 from dotenv import load_dotenv
 import logging
 import sys
-from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext, load_index_from_storage
+from llama_index.core import (
+    VectorStoreIndex,
+    SimpleDirectoryReader,
+    Settings,
+    StorageContext,
+    Document
+)
 from llama_parse import LlamaParse
-# from llama_index.llms.ollama import Ollama
-# from llama_index.embeddings.ollama import OllamaEmbedding
-from llm import init_llm, init_embed_model
-from tqdm import tqdm  # Import tqdm for progress bar
+from llama_index.vector_stores.chroma import ChromaVectorStore
+import chromadb
+from llm import init_llm, init_local_embed_model
+from tqdm import tqdm
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler(stream=sys.stdout))
 
-PERSIST_DIR = "storage"  # Define a constant for the persist directory
-load_dotenv()  # Load environment variables from .env file
+PERSIST_DIR = "chroma_storage"
+load_dotenv()
 
 def create_vector_store(docs_path: str = "docs"):
     """
-    Creates or updates a vector store from PDF documents in the specified directory.
-
-    Args:
-        docs_path (str): The path to the directory containing the PDF documents.
-                         Defaults to "docs".
-
-    Returns:
-        llama_index.core.VectorStoreIndex: The created or updated vector store index.
+    Crea o aggiorna un vector store locale con Chroma.
     """
 
-    # Check if the documents directory exists
     if not os.path.exists(docs_path):
         raise ValueError(f"Documents directory '{docs_path}' not found.")
 
-    # Load the documents from the directory
     logging.info(f"Loading documents from {docs_path}")
     parser = LlamaParse(
         api_key=os.getenv("LLAMAPARSE_API_KEY"),
-        result_type="markdown",  # "markdown" and "text" are available
+        result_type="markdown",
         verbose=True,
     )
     file_extractor = {".pdf": parser}
+
+
+
     documents = SimpleDirectoryReader(
         docs_path, file_extractor=file_extractor
     ).load_data()
 
+    # Aggiungiamo un ID sequenziale ai chunk come metadata
+    enriched_docs = []
+    for doc_id, doc in enumerate(documents):
+        for i, node in enumerate(doc.get_nodes()):
+            node.metadata["doc_id"] = str(doc_id)
+            node.metadata["seq"] = i
+        enriched_docs.append(doc)
 
-    # Initialize the LLM
-    # logging.info("Initializing LLM (Ollama)")
-    # llm = Ollama(model="deepseek-r1:1.5b")
+    # Inizializzo LLM ed embedding model
     logging.info("Initializing LLM (Google GenAI)")
     api_key = os.getenv("GOOGLE_API_KEY")
     llm = init_llm(api_key)
     Settings.llm = llm
 
-    # Initialize the embeddings model
-    # logging.info("Initializing embedding model (Ollama)")
-    # embed_model = OllamaEmbedding(model_name="nomic-embed-text:v1.5")
     logging.info("Initializing embedding model (Google GenAI)")
-    embed_model = init_embed_model(api_key)  # Using the same LLM for embeddings
+    # embed_model = init_embed_model(api_key)
+    embed_model = init_local_embed_model()
     Settings.embed_model = embed_model
 
-    # Check if the vector store already exists
-    if os.path.exists(PERSIST_DIR):
-        # Load the existing index from disk
-        logging.info("Loading existing vector store index from disk")
-        storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
-        index = load_index_from_storage(storage_context)
-        logging.info("Existing vector store index loaded successfully.")
+    # Creo client Chroma con persistenza su disco
+    chroma_client = chromadb.PersistentClient(path=PERSIST_DIR)
+    chroma_collection = chroma_client.get_or_create_collection("docs")
 
-        # Insert new documents into the existing index
-        logging.info("Inserting new documents into the existing index")
-        for doc in tqdm(documents, desc="Inserting Documents"): 
-            index.insert(doc)
-        logging.info("New documents inserted successfully.")
-    else:
-        # Create the vector store index
-        logging.info("Creating new vector store index")
-        index = VectorStoreIndex.from_documents(tqdm(documents, desc="Creating Vector Store"),
-                                                show_progress=True,
-                                                insert_batch_size=100)
-        logging.info("Vector store index created successfully.")
+    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+    storage_context = StorageContext.from_defaults(vector_store=vector_store)
+
+    logging.info("Creating/updating Chroma index")
+    index = VectorStoreIndex.from_documents(
+        tqdm(enriched_docs, desc="Creating Chroma Vector Store"),
+        storage_context=storage_context,
+        show_progress=True,
+        insert_batch_size=100
+    )
 
     return index
 
+
+def query_with_context(index, query: str, top_k: int = 2):
+    """
+    Query che ritorna i chunk rilevanti insieme a previous e next (in ordine narrativo).
+    """
+    retriever = index.as_retriever(similarity_top_k=top_k)
+    results = retriever.retrieve(query)
+
+    output = []
+    for res in results:
+        node = res.node
+        seq = node.metadata.get("seq")
+        doc_id = node.metadata.get("doc_id")
+
+        # Prev
+        prev_nodes = index.vector_store.query(
+            query_embedding=None,
+            n_results=1,
+            where={"doc_id": doc_id, "seq": seq - 1}
+        ) if seq > 0 else None
+
+        if prev_nodes and len(prev_nodes["documents"]) > 0:
+            output.append({
+                "type": "previous",
+                "text": prev_nodes["documents"][0]
+            })
+
+        # Match
+        output.append({
+            "type": "match",
+            "text": node.get_content()
+        })
+
+        # Next
+        next_nodes = index.vector_store.query(
+            query_embedding=None,
+            n_results=1,
+            where={"doc_id": doc_id, "seq": seq + 1}
+        )
+        if next_nodes and len(next_nodes["documents"]) > 0:
+            output.append({
+                "type": "next",
+                "text": next_nodes["documents"][0]
+            })
+
+    return output
+
+
 if __name__ == "__main__":
     try:
-        # Create or update the vector store
-        vector_store_index = create_vector_store()
+        index = create_vector_store()
+        print(f"Vector store creato/aggiornato in '{PERSIST_DIR}'.")
 
-        # Save the vector store to disk
-        vector_store_index.storage_context.persist(persist_dir=PERSIST_DIR)
-        print(f"Vector store created/updated and persisted to '{PERSIST_DIR}' directory.")
+        # Query di test
+        query = "chi sono i goblin?"
+        results = query_with_context(index, query, top_k=2)
+
+        for r in results:
+            print(f"[{r['type'].upper()}] {r['text'][:200]}...")
 
     except Exception as e:
-        print(f"Error creating/updating vector store: {e}")
+        print(f"Error: {e}")

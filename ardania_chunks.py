@@ -7,7 +7,7 @@ from llama_index.core.node_parser import SentenceSplitter
 
 
 def build_chunks_with_outline(pdf_path: str,
-                              chunk_size: int = 1000,
+                              chunk_size: int = 2000,
                               chunk_overlap: int = 100) -> List[Dict]:
     """Estrae testo dal PDF, lo chunkizza con LlamaIndex e aggiunge i metadati dai segnalibri."""
     doc = fitz.open(pdf_path)
@@ -26,15 +26,15 @@ def build_chunks_with_outline(pdf_path: str,
             continue
 
         # Trova il contesto (capitolo, sottocapitolo, sezione) dai segnalibri
-        context = {"chapter": None, "subchapter": None, "section": None}
+        context = {"capitolo": "", "sezione": "", "paragrafo": ""}
         for level, title, pg in outline:
             if pg <= page_num:
                 if level == 1:
-                    context["chapter"] = title
+                    context["capitolo"] = title
                 elif level == 2:
-                    context["subchapter"] = title
+                    context["sezione"] = title
                 elif level == 3:
-                    context["section"] = title
+                    context["paragrafo"] = title
 
         # Split in chunk con llamaindex
         chunks = splitter.split_text(text)

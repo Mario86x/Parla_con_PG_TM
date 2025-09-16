@@ -1,12 +1,18 @@
 from llama_index.core.workflow import Workflow, step, Context, Event, StartEvent, StopEvent
-from llm import init_llm, init_embed_model
+from llm import init_llm, init_local_embed_model
 from templates import SYSTEM_PROMPT, CHARACTER_PROMPT
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext, load_index_from_storage
 # from llama_index.embeddings.ollama import OllamaEmbedding
 import os
 import tiktoken
+import chromadb
+import logging
+from llama_index.vector_stores.chroma import ChromaVectorStore
+import chromadb
 
-PERSIST_DIR = "storage"
+
+PERSIST_DIR = "chroma_db"
+COLLECTION_NAME = "ardania_lore"
 
 class UserMessageEvent(Event):
     message: str
@@ -19,21 +25,29 @@ class ChatWorkflow(Workflow):
         super().__init__()
         self.llm = init_llm(api_key)
         # self.embed_model = OllamaEmbedding(model_name="nomic-embed-text:v1.5")
-        self.embed_model = init_embed_model(api_key)
+        self.embed_model = init_local_embed_model()
         Settings.embed_model = self.embed_model
         Settings.llm = self.llm
+        
         self.vector_store_index = self._load_vector_store()  # Load the vector store during initialization
 
         print("Chat workflow initialized with LLM and vector store.")
 
-    def _load_vector_store(self) -> VectorStoreIndex:
-        """Loads the vector store from disk or creates it if it doesn't exist."""
-        # Load the existing index from disk
-        print("Loading existing vector store index from disk")
-        storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
-        index = load_index_from_storage(storage_context)
-        print("Existing vector store index loaded successfully.")
+    def _load_vector_store(self):
+        """Load the existing vector store from disk using Chroma"""
+        # Connect to existing Chroma database
+        chroma_client = chromadb.PersistentClient(path=PERSIST_DIR)
+        # Get existing collection
+        chroma_collection = chroma_client.get_collection(name=COLLECTION_NAME)
+        print(f"Collection '{COLLECTION_NAME}' loaded with {chroma_collection.count()} documents")
+    
+        # Create vector store and load existing index
+        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+        print("Chroma collection loaded successfully")
+        index = VectorStoreIndex.from_vector_store(vector_store=vector_store)
+        print("Vector store loaded successfully")
         return index
+
 
     async def _update_running_story(self, ctx: Context, new_content: str):
         running_story = await ctx.get("running_story", "")
@@ -60,7 +74,7 @@ class ChatWorkflow(Workflow):
         running_story = await ctx.get("running_story", "")
 
         # Query the vector store for relevant information
-        retriever = self.vector_store_index.as_retriever(similarity_top_k=5) # top k da scegliere in futuro
+        retriever = self.vector_store_index.as_retriever(similarity_top_k=50) # top k da scegliere in futuro
         nodes = retriever.retrieve(f"""{CHARACTER_PROMPT.template}\n\n
                                     Conversazioni precedenti: {running_story}\n\n
                                     Messaggio del giocatore: {ev.message}\n
@@ -69,8 +83,8 @@ class ChatWorkflow(Workflow):
 
         prompt = f"""{SYSTEM_PROMPT.template}\n\n
                     {CHARACTER_PROMPT.template}\n\n
-                    ##CONVERSAZIONI PRECEDENTI: {running_story}\n\n
                     ##INFORMAZIONI DI CONTESTO: {context}\n\n
+                    ##CONVERSAZIONI PRECEDENTI: {running_story}\n\n
                     ##MESSAGGIO DEL GIOCATORE: {ev.message}\n
                     ##IL TUO PERSONAGGIO:"""
 

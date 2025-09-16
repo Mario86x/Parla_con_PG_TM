@@ -8,8 +8,8 @@ import os
 def init_llm(api_key):
     llm = GoogleGenAI(
         # model="models/gemini-1.5-flash",
-        model = "models/gemma-3-27b-it",
-        # model = "models/gemini-2.5-flash",
+        # model = "models/gemma-3-27b-it",
+        model = "models/gemini-2.5-flash",
         api_key=api_key,  # uses GOOGLE_API_KEY env var by default
     )
     print("Using Google Gemini API")
@@ -19,7 +19,7 @@ def init_local_llm():
     llm = Ollama(model="deepseek-r1:1.5b")
     return llm
 
-def init_embed_model(api_key):
+def init_local_embed_model(api_key):
     embed_model = GoogleGenAIEmbedding(
         model_name="text-embedding-004",
         api_key=api_key,  # uses GOOGLE_API_KEY env var by default
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     # )
     # print(response_ollama)
 
-    embed_model = init_embed_model(api_key)
+    embed_model = init_local_embed_model(api_key)
     embeddings = embed_model.get_text_embedding("Mario")
     print(embeddings[:5])
     print(f"Dimension of embeddings: {len(embeddings)}")

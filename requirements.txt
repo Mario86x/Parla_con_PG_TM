@@ -6,3 +6,4 @@ llama-index-embeddings-google-genai
 tqdm==4.66.1
 discord.py
 tiktoken
+chromadb

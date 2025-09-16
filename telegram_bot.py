@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os
 from dotenv import load_dotenv
-from llm import init_llm, init_embed_model
+from llm import init_llm, init_local_embed_model
 from llama_index.core import StorageContext, load_index_from_storage, Settings
 from templates import SYSTEM_PROMPT, CHARACTER_PROMPT
 import logging
@@ -40,7 +40,7 @@ def load_vector_store():
 
 # Initialize resources
 llm = init_llm(GOOGLE_API_KEY)
-embed_model = init_embed_model(GOOGLE_API_KEY)
+embed_model = init_local_embed_model(GOOGLE_API_KEY)
 Settings.llm = llm
 Settings.embed_model = embed_model
 vector_store = load_vector_store()

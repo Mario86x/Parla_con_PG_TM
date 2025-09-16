@@ -8,8 +8,6 @@ from workflow import ChatWorkflow
 # Initialize Rich console for better output
 console = Console()
 
-
-
 async def main():
     # Load environment variables
     load_dotenv()

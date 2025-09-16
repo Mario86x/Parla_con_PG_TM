@@ -3,11 +3,14 @@ from discord.ext import commands
 import os
 from dotenv import load_dotenv
 from llm import init_llm, init_local_embed_model
-from llama_index.core import StorageContext, load_index_from_storage, Settings
+from llama_index.core import VectorStoreIndex, StorageContext, load_index_from_storage, Settings
 from templates import SYSTEM_PROMPT, CHARACTER_PROMPT
 import logging
 import json
 from datetime import datetime
+from llama_index.vector_stores.chroma import ChromaVectorStore
+import chromadb
+
 
 # Setup logging
 logging.basicConfig(
@@ -23,18 +26,24 @@ if not DISCORD_TOKEN:
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Initialize LLM and Vector Store
-PERSIST_DIR = "storage"
+PERSIST_DIR = "chroma_db"
+COLLECTION_NAME = "ardania_lore"
 LOGS_FILE = "discord_chat_logs.json"
+
 user_conversations = {}
 
 def load_vector_store():
-    """Load the existing vector store from disk"""
-    if not os.path.exists(PERSIST_DIR):
-        raise ValueError(f"Storage directory '{PERSIST_DIR}' not found")
-    
-    print("Loading vector store...")
-    storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
-    index = load_index_from_storage(storage_context)
+    """Load the existing vector store from disk using Chroma"""
+    # Connect to existing Chroma database
+    chroma_client = chromadb.PersistentClient(path=PERSIST_DIR)
+    # Get existing collection
+    chroma_collection = chroma_client.get_collection(name=COLLECTION_NAME)
+    print(f"Collection '{COLLECTION_NAME}' loaded with {chroma_collection.count()} documents")
+
+    # Create vector store and load existing index
+    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+    print("Chroma collection loaded successfully")
+    index = VectorStoreIndex.from_vector_store(vector_store=vector_store)
     print("Vector store loaded successfully")
     return index
 
@@ -68,7 +77,7 @@ def save_to_logs(user_id: int, prompt: str, response_text: str):
 
 # Initialize resources
 llm = init_llm(GOOGLE_API_KEY)
-embed_model = init_local_embed_model(GOOGLE_API_KEY)
+embed_model = init_local_embed_model()
 Settings.llm = llm
 Settings.embed_model = embed_model
 vector_store = load_vector_store()

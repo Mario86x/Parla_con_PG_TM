@@ -5,14 +5,16 @@ from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, 
 # from llama_index.embeddings.ollama import OllamaEmbedding
 import os
 import tiktoken
-import chromadb
 import logging
 from llama_index.vector_stores.chroma import ChromaVectorStore
 import chromadb
+from datetime import datetime
+import hashlib
 
-
-PERSIST_DIR = "chroma_db"
-COLLECTION_NAME = "ardania_lore"
+LORE_PERSIST_DIR = "chroma_db"
+LORE_COLLECTION = "ardania_lore"
+CHAT_PERSIST_DIR = "chroma_db"
+CHAT_COLLECTION = "ardania_chat_memory"
 
 class UserMessageEvent(Event):
     message: str
@@ -29,31 +31,91 @@ class ChatWorkflow(Workflow):
         Settings.embed_model = self.embed_model
         Settings.llm = self.llm
         
-        self.vector_store_index = self._load_vector_store()  # Load the vector store during initialization
-
+        # Load both vector stores
+        self.lore_index = self._load_lore_store()
+        self.chat_index = self._load_chat_store()
         print("Chat workflow initialized with LLM and vector store.")
 
-    def _load_vector_store(self):
-        """Load the existing vector store from disk using Chroma"""
-        # Connect to existing Chroma database
-        chroma_client = chromadb.PersistentClient(path=PERSIST_DIR)
-        # Get existing collection
-        chroma_collection = chroma_client.get_collection(name=COLLECTION_NAME)
-        print(f"Collection '{COLLECTION_NAME}' loaded with {chroma_collection.count()} documents")
-    
-        # Create vector store and load existing index
-        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-        print("Chroma collection loaded successfully")
-        index = VectorStoreIndex.from_vector_store(vector_store=vector_store)
-        print("Vector store loaded successfully")
-        return index
+    def _load_lore_store(self):
+        """Load the existing lore vector store"""
+        chroma_client = chromadb.PersistentClient(path=LORE_PERSIST_DIR)
+        try:
+            lore_collection = chroma_client.get_collection(name=LORE_COLLECTION)
+            print(f"Lore collection loaded with {lore_collection.count()} documents")
+            vector_store = ChromaVectorStore(chroma_collection=lore_collection)
+            return VectorStoreIndex.from_vector_store(vector_store=vector_store)
+        except Exception as e:
+            logging.error(f"Error loading lore store: {e}")
+            raise
 
+    def _load_chat_store(self):
+        """Load or create chat memory vector store"""
+        chroma_client = chromadb.PersistentClient(path=CHAT_PERSIST_DIR)
+        try:
+            chat_collection = chroma_client.get_or_create_collection(
+                name=CHAT_COLLECTION,
+                metadata={"description": "Dynamic chat memory"}
+            )
+            print(f"Chat memory collection ready with {chat_collection.count()} messages")
+            vector_store = ChromaVectorStore(chroma_collection=chat_collection)
+            return VectorStoreIndex.from_vector_store(vector_store=vector_store)
+        except Exception as e:
+            logging.error(f"Error with chat memory store: {e}")
+            raise
 
     async def _update_running_story(self, ctx: Context, new_content: str):
         running_story = await ctx.get("running_story", "")
         running_story += f"\n\n{new_content}"
         await ctx.set("running_story", running_story)
     
+    def _create_chat_metadata(self, user_message: str, assistant_response: str) -> dict[str, any]:
+        """Create metadata for a chat exchange"""
+        # Create unique hash from message + timestamp for deduplication
+        hash_input = f"{user_message}{assistant_response}{datetime.now().isoformat()}"
+        hash_id = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
+        
+        return {
+            "hash": hash_id,
+            "timestamp": datetime.now().isoformat(),
+            "memory_type": "chat",
+            "turn_number": len(self.chat_index.docstore.docs) + 1,
+            "message_type": "dialogue",
+            "user_message": user_message,
+            "assistant_response": assistant_response,
+            "importance_score": 0.5  # Default score, can be updated later
+        }
+
+    async def _save_to_chat_memory(self, user_message: str, assistant_response: str):
+        """Save a conversation exchange to chat memory using optimized approach"""
+        try:
+            # Create the chat content
+            exchange = f"""User Message: {user_message}\n
+                         Assistant Response: {assistant_response}"""
+            
+            # Generate metadata
+            metadata = self._create_chat_metadata(user_message, assistant_response)
+            
+            # Get collection directly for batch operations
+            chroma_client = chromadb.PersistentClient(path=CHAT_PERSIST_DIR)
+            chat_collection = chroma_client.get_collection(name=CHAT_COLLECTION)
+            
+            # Calculate embedding using the same model as vector store
+            embedding = self.embed_model.get_text_embedding(exchange)
+            
+            # Upsert into collection
+            chat_collection.upsert(
+                ids=[metadata["hash"]],
+                documents=[exchange],
+                metadatas=[metadata],
+                embeddings=[embedding]
+            )
+            
+            logging.info(f"Saved chat memory with hash {metadata['hash'][:8]}")
+            
+        except Exception as e:
+            logging.error(f"Error saving to chat memory: {e}")
+            raise
+
     @step
     async def start_chat(self, ctx: Context, ev: StartEvent) -> UserMessageEvent:
         print("Welcome to the chat! Let's create a story together.")
@@ -73,19 +135,27 @@ class ChatWorkflow(Workflow):
     async def generate_response(self, ctx: Context, ev: UserMessageEvent) -> AssistantResponseEvent | StopEvent:
         running_story = await ctx.get("running_story", "")
 
-        # Query the vector store for relevant information
-        retriever = self.vector_store_index.as_retriever(similarity_top_k=50) # top k da scegliere in futuro
-        nodes = retriever.retrieve(f"""{CHARACTER_PROMPT.template}\n\n
-                                    Conversazioni precedenti: {running_story}\n\n
-                                    Messaggio del giocatore: {ev.message}\n
-                                   """)
-        context = "\n".join([node.text for node in nodes])
+        # Parallel retrieval from both stores
+        lore_retriever = self.lore_index.as_retriever(similarity_top_k=3)
+        chat_retriever = self.chat_index.as_retriever(similarity_top_k=2)
+
+        # Get relevant nodes from both stores
+        lore_nodes = lore_retriever.retrieve(ev.message)
+        chat_nodes = chat_retriever.retrieve(ev.message)
+
+        # Combine context from both sources
+        lore_context = "\n".join([f"[LORE] {node.text}" for node in lore_nodes])
+        chat_context = "\n".join([f"[CHAT] {node.text}" for node in chat_nodes])
+        combined_context = f"{lore_context}\n\n{chat_context}"
 
         prompt = f"""{SYSTEM_PROMPT.template}\n\n
                     {CHARACTER_PROMPT.template}\n\n
-                    ##INFORMAZIONI DI CONTESTO: {context}\n\n
-                    ##CONVERSAZIONI PRECEDENTI: {running_story}\n\n
-                    ##MESSAGGIO DEL GIOCATORE: {ev.message}\n
+                    ##LORE E CHAT MEMORY:
+                    {combined_context}\n\n
+                    ##CONVERSAZIONI PRECEDENTI: 
+                    {running_story}\n\n
+                    ##MESSAGGIO DEL GIOCATORE: 
+                    {ev.message}\n
                     ##IL TUO PERSONAGGIO:"""
 
         print(f"\nprompt length: {len(tiktoken.encoding_for_model('gpt-4o-mini').encode(prompt))} tokens\n")
@@ -98,6 +168,9 @@ class ChatWorkflow(Workflow):
         try:
             response = self.llm.complete(prompt)
             response_text = response.text.strip()
+            # Save the exchange to chat memory
+            await self._save_to_chat_memory(ev.message, response_text)
+            
             await self._update_running_story(ctx, f"\nIl tuo personaggio: {response_text}")
             return AssistantResponseEvent(response=response_text)
         except Exception as e:

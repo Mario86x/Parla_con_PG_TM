@@ -19,14 +19,14 @@ def init_local_llm():
     llm = Ollama(model="deepseek-r1:1.5b")
     return llm
 
-def init_local_embed_model(api_key):
-    embed_model = GoogleGenAIEmbedding(
-        model_name="text-embedding-004",
-        api_key=api_key,  # uses GOOGLE_API_KEY env var by default
-        embed_batch_size=500
-    )
-    print("Using Google Embedding API")
-    return embed_model
+# def init_local_embed_model(api_key):
+#     embed_model = GoogleGenAIEmbedding(
+#         model_name="text-embedding-004",
+#         api_key=api_key,  # uses GOOGLE_API_KEY env var by default
+#         embed_batch_size=500
+#     )
+#     print("Using Google Embedding API")
+#     return embed_model
 
 def init_local_embed_model():
     embed_model = OllamaEmbedding(model_name="embeddinggemma")

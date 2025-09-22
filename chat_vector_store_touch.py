@@ -14,7 +14,8 @@ def init_chat_collection():
         collection = chroma_client.get_or_create_collection(
             name=CHAT_COLLECTION,
             metadata={
-                "description": "Memoria delle conversazioni con il personaggio"
+                "description": "Memoria delle conversazioni con il personaggio",
+                "hnsw:space": "cosine"
             }
         )
         logging.info(f"Chat collection '{CHAT_COLLECTION}' ready in '{PERSIST_DIR}'")

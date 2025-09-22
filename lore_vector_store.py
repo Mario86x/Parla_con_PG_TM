@@ -18,7 +18,7 @@ EMBEDDING_BATCH_SIZE = 20  # Batch per embeddings paralleli
 MAX_WORKERS = 5  # Thread per embedding paralleli
 
 KNOWLEDGE_PATH = "lore_md"  # changed from knowledge_md
-PERSIST_DIR = "chroma_lore_db"  # changed from chroma_db
+PERSIST_DIR = "chroma_db"  
 COLLECTION_NAME = "ardania_lore"  # changed from ardania_knowledge
 
 
@@ -36,7 +36,8 @@ def init_chroma_collection(persist_dir=PERSIST_DIR, collection_name=COLLECTION_N
     chroma_client = chromadb.PersistentClient(path=persist_dir)
     collection = chroma_client.get_or_create_collection(
         name=collection_name,
-        metadata={"description": "Base conoscenza della lore di Ardania"}
+        metadata={"description": "Base conoscenza della lore di Ardania",
+                  "hnsw:space": "cosine"}
     )
     logging.info(f"Collezione lore '{collection_name}' pronta in '{persist_dir}'")
     return collection

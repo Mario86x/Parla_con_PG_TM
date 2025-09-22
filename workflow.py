@@ -64,9 +64,9 @@ class ChatWorkflow(Workflow):
             raise
 
     async def _update_running_story(self, ctx: Context, new_content: str):
-        running_story = await ctx.get("running_story", "")
+        running_story = await ctx.store.get("running_story", "")
         running_story += f"\n\n{new_content}"
-        await ctx.set("running_story", running_story)
+        await ctx.store.set("running_story", running_story)
     
     def _create_chat_metadata(self, user_message: str, assistant_response: str) -> dict[str, any]:
         """Create metadata for a chat exchange"""
@@ -133,7 +133,7 @@ class ChatWorkflow(Workflow):
 
     @step
     async def generate_response(self, ctx: Context, ev: UserMessageEvent) -> AssistantResponseEvent | StopEvent:
-        running_story = await ctx.get("running_story", "")
+        running_story = await ctx.store.get("running_story", "")
 
         # Parallel retrieval from both stores
         lore_retriever = self.lore_index.as_retriever(similarity_top_k=3)

@@ -18,6 +18,7 @@ CHAT_COLLECTION = "ardania_chat_memory"
 
 class UserMessageEvent(Event):
     message: str
+    verbose: bool = False  # Flag to indicate if debug info should be printed
 
 class AssistantResponseEvent(Event):
     response: str
@@ -126,34 +127,49 @@ class ChatWorkflow(Workflow):
     async def get_user_message(self, ctx: Context, ev: AssistantResponseEvent) -> UserMessageEvent:
         print("\nPrevious response:")
         print(ev.response)
-
+        verbose = False
         user_message = input("\nYour message: ")
+        if "<debug>" in user_message:
+            user_message = input("\nYour message (debug): ")
+            verbose = True
         await self._update_running_story(ctx, f"\nUser: {user_message}")
-        return UserMessageEvent(message=user_message)
+        return UserMessageEvent(message=user_message, verbose=verbose)
 
     @step
     async def generate_response(self, ctx: Context, ev: UserMessageEvent) -> AssistantResponseEvent | StopEvent:
         running_story = await ctx.store.get("running_story", "")
+        # last 10 messages
+        last_10_messages = "\n".join(running_story.split("\n")[-20:])
 
         # Parallel retrieval from both stores
-        lore_retriever = self.lore_index.as_retriever(similarity_top_k=3)
-        chat_retriever = self.chat_index.as_retriever(similarity_top_k=2)
+        lore_retriever = self.lore_index.as_retriever(similarity_top_k=10)
+        chat_retriever = self.chat_index.as_retriever(similarity_top_k=5)
 
         # Get relevant nodes from both stores
         lore_nodes = lore_retriever.retrieve(ev.message)
+        context_nodes=lore_retriever.retrieve(last_10_messages)
+        lore_nodes.extend(context_nodes)
+        # deduplicate lore nodes
+        lore_nodes = list({node.text: node for node in lore_nodes}.values())
         chat_nodes = chat_retriever.retrieve(ev.message)
 
         # Combine context from both sources
-        lore_context = "\n".join([f"[LORE] {node.text}" for node in lore_nodes])
-        chat_context = "\n".join([f"[CHAT] {node.text}" for node in chat_nodes])
+        lore_context = "\n".join([f"""[LORE] {node.metadata["headings"]}: {node.text}""" for node in lore_nodes])
+        # chat_context = "\n".join([f"[CHAT] {node.text}" for node in chat_nodes])
+
+        #select only chat nodes with importance score greater than the lowest lore node score
+        if lore_nodes:
+            min_lore_score = min([node.score for node in lore_nodes])
+            chat_context = "\n".join([f"[CONVERSAZIONI PRECEDENTI] {node.text}" for node in chat_nodes if node.score >= min_lore_score])
+
         combined_context = f"{lore_context}\n\n{chat_context}"
 
         prompt = f"""{SYSTEM_PROMPT.template}\n\n
                     {CHARACTER_PROMPT.template}\n\n
-                    ##LORE E CHAT MEMORY:
+                    ##CONTESTO AGGIUNTIVO:
                     {combined_context}\n\n
-                    ##CONVERSAZIONI PRECEDENTI: 
-                    {running_story}\n\n
+                    ##CONVERSAZIONI PRECEDENTI (ultimi 10 messaggi):
+                    {last_10_messages}\n\n
                     ##MESSAGGIO DEL GIOCATORE: 
                     {ev.message}\n
                     ##IL TUO PERSONAGGIO:"""
@@ -162,7 +178,7 @@ class ChatWorkflow(Workflow):
         print(f"\nGenerating response \n--------------\n")
 
         # se nel messaggio c'è <debug> allora stampo il prompt
-        if "<debug>" in ev.message:
+        if ev.verbose:
             print(f"Prompt for LLM:\n{prompt}\n--------------\n")
 
         try:

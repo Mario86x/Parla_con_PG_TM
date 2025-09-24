@@ -3,6 +3,7 @@ from llm import init_llm, init_local_embed_model
 from templates import SYSTEM_PROMPT, CHARACTER_PROMPT
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings, StorageContext, load_index_from_storage
 # from llama_index.embeddings.ollama import OllamaEmbedding
+from llama_index.retrievers.bm25 import BM25Retriever
 import os
 import tiktoken
 import logging
@@ -144,6 +145,10 @@ class ChatWorkflow(Workflow):
         # Parallel retrieval from both stores
         lore_retriever = self.lore_index.as_retriever(similarity_top_k=10)
         chat_retriever = self.chat_index.as_retriever(similarity_top_k=5)
+
+        lore_bm25_retriever = BM25Retriever(self.lore_index)
+        chat_bm25_retriever = BM25Retriever(self.chat_index)
+
 
         # Get relevant nodes from both stores
         lore_nodes = lore_retriever.retrieve(ev.message)

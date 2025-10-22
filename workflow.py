@@ -45,7 +45,7 @@ class ChatWorkflow(Workflow):
             lore_collection = chroma_client.get_collection(name=LORE_COLLECTION)
             print(f"Lore collection loaded with {lore_collection.count()} documents")
             vector_store = ChromaVectorStore(chroma_collection=lore_collection)
-            return VectorStoreIndex.from_vector_store(vector_store=vector_store)
+            return VectorStoreIndex.from_vector_store(vector_store=vector_store, store_nodes_override=True)
         except Exception as e:
             logging.error(f"Error loading lore store: {e}")
             raise
@@ -60,7 +60,7 @@ class ChatWorkflow(Workflow):
             )
             print(f"Chat memory collection ready with {chat_collection.count()} messages")
             vector_store = ChromaVectorStore(chroma_collection=chat_collection)
-            return VectorStoreIndex.from_vector_store(vector_store=vector_store)
+            return VectorStoreIndex.from_vector_store(vector_store=vector_store, store_nodes_override=True)
         except Exception as e:
             logging.error(f"Error with chat memory store: {e}")
             raise
@@ -146,26 +146,33 @@ class ChatWorkflow(Workflow):
         lore_retriever = self.lore_index.as_retriever(similarity_top_k=10)
         chat_retriever = self.chat_index.as_retriever(similarity_top_k=5)
 
-        lore_bm25_retriever = BM25Retriever(self.lore_index)
-        chat_bm25_retriever = BM25Retriever(self.chat_index)
+        lore_bm25_retriever = BM25Retriever.from_defaults(index=self.lore_index,
+                                                          language='en',
+                                                          similarity_top_k=10)
+        chat_bm25_retriever = BM25Retriever.from_defaults(index=self.chat_index,
+                                                          language='en',
+                                                          similarity_top_k=5)
 
 
         # Get relevant nodes from both stores
         lore_nodes = lore_retriever.retrieve(ev.message)
         context_nodes=lore_retriever.retrieve(last_10_messages)
         lore_nodes.extend(context_nodes)
+        lore_nodes_bm25 = lore_bm25_retriever.retrieve(ev.message)
+        lore_nodes.extend(lore_nodes_bm25)
+        
         # deduplicate lore nodes
         lore_nodes = list({node.text: node for node in lore_nodes}.values())
+        
         chat_nodes = chat_retriever.retrieve(ev.message)
+        chat_nodes_bm25 = chat_bm25_retriever.retrieve(ev.message)
+        chat_nodes.extend(chat_nodes_bm25)
+        # deduplicate chat nodes
+        chat_nodes = list({node.text: node for node in chat_nodes}.values())
 
         # Combine context from both sources
         lore_context = "\n".join([f"""[LORE] {node.metadata["headings"]}: {node.text}""" for node in lore_nodes])
-        # chat_context = "\n".join([f"[CHAT] {node.text}" for node in chat_nodes])
-
-        #select only chat nodes with importance score greater than the lowest lore node score
-        if lore_nodes:
-            min_lore_score = min([node.score for node in lore_nodes])
-            chat_context = "\n".join([f"[CONVERSAZIONI PRECEDENTI] {node.text}" for node in chat_nodes if node.score >= min_lore_score])
+        chat_context = "\n".join([f"[CHAT] {node.text}" for node in chat_nodes])
 
         combined_context = f"{lore_context}\n\n{chat_context}"
 

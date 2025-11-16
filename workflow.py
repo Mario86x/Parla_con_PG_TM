@@ -146,14 +146,6 @@ class ChatWorkflow(Workflow):
         lore_retriever = self.lore_index.as_retriever(similarity_top_k=10)
         chat_retriever = self.chat_index.as_retriever(similarity_top_k=5)
 
-        lore_bm25_retriever = BM25Retriever.from_defaults(index=self.lore_index,
-                                                          language='en',
-                                                          similarity_top_k=10)
-        chat_bm25_retriever = BM25Retriever.from_defaults(index=self.chat_index,
-                                                          language='en',
-                                                          similarity_top_k=5)
-
-
         # Get relevant nodes from both stores
         lore_nodes = lore_retriever.retrieve(ev.message)
         context_nodes=lore_retriever.retrieve(last_10_messages)

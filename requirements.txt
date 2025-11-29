@@ -12,3 +12,5 @@ tiktoken==0.6.0
 sqlalchemy==2.0.28
 pandas==2.2.1
 rich==13.7.1
+rank-bm25==0.2.4
+nltk==3.8.1

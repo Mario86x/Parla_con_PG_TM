@@ -2,165 +2,120 @@ import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
-from llm import init_llm, init_local_embed_model
-from llama_index.core import VectorStoreIndex, StorageContext, load_index_from_storage, Settings
-from templates import SYSTEM_PROMPT, CHARACTER_PROMPT
 import logging
-import json
-from datetime import datetime
-from llama_index.vector_stores.chroma import ChromaVectorStore
-import chromadb
+import asyncio
+from typing import Dict, Any, Optional
 
+# Importa le classi/funzioni dal tuo progetto, incluso il nuovo workflow
+from llm_client import init_clients # non è più necessario init_llm o init_local_embed_model
+from workflow import ChatWorkflow, UserMessageEvent, AssistantResponseEvent, StopEvent
+from llama_index.core.workflow import Context # Necessario per l'esecuzione del workflow
 
 # Setup logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger("DiscordBot")
 
 # Load environment variables
 load_dotenv()
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN environment variable not set")
+
+# ⚠️ Nota: la chiave API di Google dovrebbe essere nel tuo .env (es. GOOGLE_API_KEY)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    raise ValueError("GOOGLE_API_KEY environment variable not set or is empty")
 
-# Initialize LLM and Vector Store
-PERSIST_DIR = "chroma_db"
-COLLECTION_NAME = "ardania_lore"
-LOGS_FILE = "discord_chat_logs.json"
-
-user_conversations = {}
-
-def load_vector_store():
-    """Load the existing vector store from disk using Chroma"""
-    # Connect to existing Chroma database
-    chroma_client = chromadb.PersistentClient(path=PERSIST_DIR)
-    # Get existing collection
-    chroma_collection = chroma_client.get_collection(name=COLLECTION_NAME)
-    print(f"Collection '{COLLECTION_NAME}' loaded with {chroma_collection.count()} documents")
-
-    # Create vector store and load existing index
-    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-    print("Chroma collection loaded successfully")
-    index = VectorStoreIndex.from_vector_store(vector_store=vector_store)
-    print("Vector store loaded successfully")
-    return index
-
-def save_to_logs(user_id: int, prompt: str, response_text: str):
-    """Save chat interaction to JSON log file"""
-    try:
-        # Load existing logs
-        if os.path.exists(LOGS_FILE):
-            with open(LOGS_FILE, 'r', encoding='utf-8') as f:
-                logs = json.load(f)
-        else:
-            logs = {}
-
-        # Convert user_id to string for JSON compatibility
-        user_id = str(user_id)
-        
-        if user_id not in logs:
-            logs[user_id] = []
-        
-        logs[user_id].append({
-            "timestamp": datetime.now().isoformat(),
-            "prompt": prompt,
-            "response": response_text
-        })
-        
-        with open(LOGS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(logs, f, ensure_ascii=False, indent=2)
-            
-    except Exception as e:
-        logging.error(f"Error saving to logs: {e}")
-
-# Initialize resources
-llm = init_llm(GOOGLE_API_KEY)
-embed_model = init_local_embed_model()
-Settings.llm = llm
-Settings.embed_model = embed_model
-vector_store = load_vector_store()
-
-# Create bot instance
+# Inizializzazione del bot Discord
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# Variabili Globali
+# Usiamo un dizionario per memorizzare l'istanza del workflow, una per utente (se necessario per isolamento)
+# Per questo esempio, useremo una singola istanza globale per semplicità.
+global_workflow: Optional[ChatWorkflow] = None
+# user_workflows: Dict[int, ChatWorkflow] = {} # Mantenere un workflow per utente è più complesso, usiamo il globale per ora.
+
 @bot.event
 async def on_ready():
-    print(f'{bot.user} has connected to Discord!')
-
-@bot.command(name='start')
-async def start(ctx):
-    """Handle the !start command"""
-    user_id = ctx.author.id
-    user_conversations[user_id] = []
-    await ctx.send("Benvenuto! Sono il tuo personaggio RPG. Puoi iniziare a chattare con me ora.")
+    logger.info(f'{bot.user.name} si è connesso a Discord!')
+    
+    # Inizializza il workflow all'avvio del bot
+    global global_workflow
+    try:
+        # ChatWorkflow gestisce internamente LLM, Embeddings, LoreStore e ChatStore
+        global_workflow = ChatWorkflow(api_key=GOOGLE_API_KEY)
+        logger.info("✅ ChatWorkflow inizializzato con successo.")
+    except Exception as e:
+        logger.error(f"❌ Errore durante l'inizializzazione del ChatWorkflow: {e}")
+        # Se fallisce, il bot non sarà in grado di rispondere
+        global_workflow = None
 
 @bot.event
 async def on_message(message):
-    # Ignore messages from the bot itself
+    global global_workflow
+
+    # Ignora i messaggi del bot stesso
     if message.author == bot.user:
         return
 
-    # Process commands (like !start)
-    await bot.process_commands(message)
+    # Controlla se il workflow è stato inizializzato
+    if global_workflow is None:
+        await message.channel.send("Mi dispiace, il sistema non è stato inizializzato correttamente (errore API/Redis). Controlla i log.")
+        return
 
-    # Only respond to non-command messages in DMs or when mentioned
-    if not message.content.startswith('!') and (
-        isinstance(message.channel, discord.DMChannel) or 
-        bot.user in message.mentions
-    ):
-        user_id = message.author.id
-        if user_id not in user_conversations:
-            user_conversations[user_id] = []
+    user_message = message.content.strip()
+    
+    # Evita di processare messaggi vuoti o troppo brevi
+    if not user_message:
+        return
+
+    # 1. Creazione dell'evento utente
+    user_event = UserMessageEvent(message=user_message)
+
+    try:
+        # 2. Esecuzione del passo generate_response del workflow
+        # Questo è il cuore del processo: ricerca ibrida, prompt building e LLM call.
+        logger.info(f"Processing message from {message.author.name}: {user_message[:50]}...")
         
-        # Remove bot mention from message
-        user_message = message.content.replace(f'<@{bot.user.id}>', '').strip()
+        # Creiamo un contesto con l'istanza del workflow
+        workflow_context = Context(global_workflow) 
         
-        try:
-            # Query vector store for context
-            retriever = vector_store.as_retriever(similarity_top_k=10)
-            nodes = retriever.retrieve(user_message)
-            relevant_context = "\n".join([node.text for node in nodes])
+        # Chiamata al passo generate_response
+        response_event = await global_workflow.generate_response(workflow_context, user_event)
+        
+        # 3. Gestione della risposta
+        if isinstance(response_event, AssistantResponseEvent):
+            response_text = response_event.response.strip()
             
-            # Build conversation history
-            conversation_history = "\n".join(user_conversations[user_id][-5:])
-            
-            # Create prompt
-            prompt = f"""
-            {SYSTEM_PROMPT.template}\n
-            {CHARACTER_PROMPT.template}\n
-            Informazioni di Contesto: {relevant_context}\n
-            Cronologia della conversazione: {conversation_history}\n
-            Messaggio del giocatore: {user_message}\n
-            Il tuo personaggio:\n"""
-            
-            # Generate response
-            response = llm.complete(prompt)
-            response_text = response.text.strip()
-            
-            # Update conversation history
-            user_conversations[user_id].append(f"Giocatore: {user_message}")
-            user_conversations[user_id].append(f"Personaggio: {response_text}")
-            
-            # Log the interaction
-            save_to_logs(user_id, prompt, response_text)
-            
-            # Send response
+            # 4. Invia la risposta su Discord
             await message.channel.send(response_text)
             
-        except Exception as e:
-            logging.error(f"Error processing message: {e}")
-            await message.channel.send(
-                "Mi dispiace, sto avendo qualche problema. Riprova più tardi."
-            )
+        elif isinstance(response_event, StopEvent):
+            logger.info("Workflow fermato da un evento StopEvent.")
+            # Puoi decidere di inviare un messaggio di chiusura qui se necessario
+            
+        else:
+            logger.warning(f"Tipo di evento non gestito: {type(response_event)}")
+            await message.channel.send("Mi dispiace, ho ricevuto un tipo di risposta inaspettato dal sistema.")
 
+    except Exception as e:
+        logger.error(f"❌ Errore durante l'esecuzione del workflow: {e}")
+        await message.channel.send(
+            "Mi dispiace, sto avendo qualche problema tecnico. Riprova più tardi."
+        )
+
+# Questa è la funzione principale per avviare il bot
 def main():
-    """Start the bot"""
-    print("Starting bot...")
+    logger.info("Avvio del bot in corso...")
+    # La funzione run blocca l'esecuzione
     bot.run(DISCORD_TOKEN)
 
 if __name__ == "__main__":
+    # Assicurati di avere le variabili d'ambiente nel tuo file .env 
+    # (DISCORD_TOKEN e GOOGLE_API_KEY o altre chiavi LLM)
     main()

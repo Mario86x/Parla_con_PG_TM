@@ -462,6 +462,6 @@ if __name__ == "__main__":
         print(f"  testo: {r['document']}")
         print(f"  Rank Semantico: {r['semantic_rank'] if r['semantic_rank'] else 'N/A'}, Rank Keyword: {r['keyword_rank'] if r['keyword_rank'] else 'N/A'}")
         
-# 4. Esempio di delete
-# store.delete_by_filter(where={"timestamp": test_metadata["timestamp"]})
-# print(f"\nMessaggi dopo la cancellazione: {store.count()}")
+    # 4. Esempio di delete
+    # store.delete_by_filter(where={"timestamp": test_metadata["timestamp"]})
+    # print(f"\nMessaggi dopo la cancellazione: {store.count()}")
